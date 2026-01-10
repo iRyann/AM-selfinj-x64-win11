@@ -1,0 +1,1 @@
+# AM-selfinj-x64-win11
