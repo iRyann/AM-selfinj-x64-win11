@@ -61,7 +61,7 @@ _start:
 die:
     int 3
 _suite_du_code:
-    ; Votre payload ici...
+    ; TODO
     jmp _suite_du_code
 
 ; get_ldr_head: retourne un pointeur stable vers LIST_ENTRY head (InMemoryOrderModuleList)
