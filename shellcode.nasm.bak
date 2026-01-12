@@ -1,0 +1,132 @@
+[bits 64]
+
+; shellcode.nasm - Windows x64
+; Author : Ryan Bouchou
+; Date : 2026-01-11
+; Version : 0
+; Description : Minimal stub for GetModuleHnadle and GetProcAddress resolution
+
+section .text:
+  global _start
+
+_start:
+
+_getAddressKernel32Dll:
+; Thanks to PEB Walk method, and assuming that
+; kernel32.dll is the third element of the InMemoryOrderList
+; we compute the base address of kernel32.dll in r8
+
+  mov rbx, gs:[0x60] ; Get address of PEB struct
+  ; According to "Data structure alignment" requirement
+  ; We've to consider a 4 bytes spacing between
+  ; Reserved[2] and Reserved[3]
+  mov rbx, [rbx + 0x18] ; Get address of PEB_LDR_DATA
+  add rbx, 0x20 ; Get address of InMemoryOrderModuleList
+  mov rbx, [rbx] ; Get the current proc entry
+  mov rbx, [rbx] ; Get the ntdll entry
+  mov rbx, [rbx] ; Get the kernel32 entry
+  mov r8, [rbx + 0x20] ; Get ketnel32.dll base address
+  
+  ;-------------------;
+  ;--- EAT Parsing ---;
+  ;-------------------;
+
+  ; Address EAT
+  mov ebx, [r8 + 0x3c] ; ebx <- e_lfanew = PE Header RVA
+  add rbx, r8 ; rbx <- PE Header address = e_lfanew + kernel32 base address
+  mov ebx, [rbx + 0x88] ; ebx <- Export Directory offset
+  add rbx, r8 ; rbx <- EAT address
+
+  ; AddressOfFunctions
+  mov edx, [rbx + 0x1c] ; edx <- RVA AddressOfFunction
+  add rdx, r8 ; rdx <- VA AddressOfFunction
+  push rdx 
+
+  ; AddressOfNames
+  mov edx, [rbx + 0x20] ; edx <- RVA AddressOfNames
+  add rdx, r8 ; rdx <- VA AddressOfNames
+  push rdx 
+
+  ; AddressOfNameOrdinals
+  mov edx, [rbx + 0x24] ; edx <- RVA AddressOfNameOrdinals
+  add rdx, r8 ; rdx <- VA AddressOfNameOrdinals
+  push rdx 
+
+  ; Counter
+  mov ecx, [rbx + 0x18] ; edx <- NumberOfNames
+  xor rax, rax            ; On prépare RAX pour le résultat
+
+_find_function_loop:
+    jecxz _function_not_found ; Sécurité si compteur = 0
+    dec rcx                   ; On décrémente l'index (de N-1 à 0)
+
+    ; 1. Récupérer le nom de la fonction courante
+    mov rsi, [rsp + 8]      ; [RSP+8] = AddressOfNames (le 2ème push)
+    mov esi, [rsi + rcx*4]  ; RVA du nom (tableau de DWORDs)
+    add rsi, r8             ; RSI = VA de la chaîne de caractères (ex: "Sleep")
+
+    ; 2. Comparer avec la chaîne cible ("GetProcAddress")
+    ; On suppose que R9 pointe vers notre chaîne "GetProcAddress"
+    lea rdi, [rel str_getprocaddr] 
+    
+    call _strcmp            ; Comparaison de chaînes (voir fonction plus bas)
+    test eax, eax           ; EAX = 0 si égalité
+    jnz _find_function_loop ; Si pas égal, on boucle
+
+    ; --- TROUVÉ ! ---
+    
+    ; 3. Récupérer l'Ordinal
+    mov rdx, [rsp]          ; [RSP] = AddressOfNameOrdinals (le dernier push)
+    movzx edx, word [rdx + rcx*2] ; L'ordinal est un WORD (2 bytes). 
+                                  ; EDX = Ordinal pur.
+
+    ; 4. Récupérer l'adresse de la fonction
+    mov rax, [rsp + 16]     ; [RSP+16] = AddressOfFunctions (le 1er push)
+    mov eax, [rax + rdx*4]  ; RVA de la fonction (tableau de DWORDs)
+    add rax, r8             ; RAX = VA de GetProcAddress !
+    
+    ; 5. Nettoyage de la pile
+    add rsp, 24             ; On retire les 3 pushes (8*3)
+    jmp _finish
+
+_function_not_found:
+    add rsp, 24             ; Nettoyage même en cas d'erreur
+    xor rax, rax            ; Return 0
+    
+_finish:
+    ; RAX contient maintenant l'adresse de GetProcAddress
+    ; Vous pouvez le sauvegarder dans un registre (ex: R12) et appeler LoadLibraryA ensuite.
+    ret
+
+; -------------------------------------------------------------
+; Helper: String Compare (Sensible à la casse)
+; IN: RSI = String 1, RDI = String 2
+; OUT: EAX = 0 si match, 1 sinon
+; -------------------------------------------------------------
+_strcmp:
+    push rsi
+    push rdi
+.loop:
+    mov al, byte [rsi]
+    mov bl, byte [rdi]
+    cmp al, bl
+    jne .diff
+    test al, al        ; Fin de chaîne (0x00) ?
+    jz .match
+    inc rsi
+    inc rdi
+    jmp .loop
+.diff:
+    mov eax, 1
+    jmp .end
+.match:
+    xor eax, eax
+.end:
+    pop rdi
+    pop rsi
+    ret
+
+; -------------------------------------------------------------
+; DATA
+; -------------------------------------------------------------
+str_getprocaddr: db "GetProcAddress", 0

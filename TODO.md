@@ -4,22 +4,6 @@ Référence du cahier des charges : Projet d'analyse et d'injection de shellcode
 
 ---
 
-## 0. Cadrage initial
-
-- Lire intégralement le sujet et identifier les contraintes non négociables
-- Lister les outils autorisés et interdits
-- Définir le périmètre exact du shellcode attendu
-- Choisir l'implémentation du shellcode :
-  - assembleur NASM x86_64 Windows
-  - ou C minimal compilé en PIC
-- Créer l'arborescence de travail conforme :
-  - compile.sh
-  - shellcode.nasm ou shellcode.c
-  - main.tpl.c
-  - tmp/
-
----
-
 ## 1. Conception du shellcode
 
 - Définir le comportement fonctionnel exact :
