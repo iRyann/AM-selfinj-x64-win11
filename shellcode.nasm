@@ -4,65 +4,53 @@ section .text
 global _start
 
 _start:
-    and rsp, -16              ; Alignement Stack (ABI)
+  and rsp, -16 ; Alignement Stack (ABI)
 
-    ; ---------------------------------------------------------
-    ; 1 & 2) Initialisation et recherche de Kernel32 (Code précédent)
-    ; ---------------------------------------------------------
-    call get_ldr_head
-    test rax, rax
-    jz die
-    mov r14, rax              ; R14 = Sentinel
+  ; ---------------------------------------------------------
+  ; Initialisation et recherche de Kernel32
+  ; ---------------------------------------------------------
+  call get_ldr_head
+  test rax, rax
+  jz die
+  mov r14, rax ; R14 = Sentinel
 
-    lea rcx, [rel w_kernel32]
-    mov rdx, r14
-    call walk_to_module_dllbase
-    test rax, rax
-    jz die
-    mov r15, rax              ; R15 = Kernel32 DllBase
+  lea rcx, [rel w_kernel32]
+  mov rdx, r14
+  call walk_to_module_dllbase
+  test rax, rax
+  jz die
+  mov r15, rax ; R15 = Kernel32 DllBase
 
-    ; ---------------------------------------------------------
-    ; 3) Construire export context kernel32
-    ; ---------------------------------------------------------
-    mov rcx, r15              ; RCX = DllBase
-    call get_export_ctx       ; Vérifie le PE Header
-    test rax, rax
-    jz die
-    
-    ; Dans cette version simplifiée, le Context EST la DllBase.
-    ; Cela suffit pour résoudre n'importe quel export.
-    mov r12, rax              ; R12 = Export Context (DllBase)
+  ; ---------------------------------------------------------
+  ; 
+  ; ---------------------------------------------------------
+  mov rcx, r15 ; RCX = DllBase
+  call get_export_ctx ; Vérifie le PE Header
+  test rax, rax
+  jz die
+  
+  ; Dans cette version simplifiée, le Context EST la DllBase.
+  ; Cela suffit pour résoudre n'importe quel export.
+  mov r12, rax ; R12 = Export Context (DllBase)
 
-    ; ---------------------------------------------------------
-    ; 4) Résoudre GetProcAddress et GetModuleHandleA
-    ; ---------------------------------------------------------
-    
-    ; --- Résolution de GetProcAddress ---
-    lea rdx, [rel a_GetProcAddress] ; RDX = "GetProcAddress"
-    mov rcx, r12                    ; RCX = Context (Base)
-    call resolve_export_by_name
-    test rax, rax
-    jz die
-    mov r13, rax                    ; R13 = pGetProcAddress
-
-    ; --- Résolution de GetModuleHandleA ---
-    lea rdx, [rel a_GetModuleHandleA]
-    mov rcx, r12
-    call resolve_export_by_name
-    test rax, rax
-    jz die
-    mov rbx, rax                    ; RBX = pGetModuleHandleA
-
-    ; --- SUCCÈS ---
-    ; R13 = &GetProcAddress
-    ; RBX = &GetModuleHandleA
-    jmp _suite_du_code
+  ; ---------------------------------------------------------
+  ; Résoudre GetProcAddress
+  ; ---------------------------------------------------------
+  
+  ; --- Résolution de GetProcAddress ---
+  lea rdx, [rel a_GetProcAddress] ; RDX = "GetProcAddress"
+  mov rcx, r12 ; RCX = Context (Base)
+  call resolve_export_by_name
+  test rax, rax
+  jz die
+  mov r13, rax ; R13 = pGetProcAddress
+  jmp _suite_du_code
 
 die:
-    int 3
+  int 3
 _suite_du_code:
-    ; TODO
-    jmp _suite_du_code
+  ; TODO
+  jmp _suite_du_code
 
 ; get_ldr_head: retourne un pointeur stable vers LIST_ENTRY head (InMemoryOrderModuleList)
 ; OUT: RAX = head (LIST_ENTRY*)
@@ -131,24 +119,24 @@ _not_found:
 ; OUT: RAX = DllBase (Context) ou 0 si invalide
 ; =============================================================
 get_export_ctx:
-    mov eax, [rcx + 0x3C]      ; e_lfanew (Offset PE Header)
-    add rax, rcx               ; RAX = Adresse PE Header
-    
-    ; Vérification signature "PE" (Optionnel mais recommandé)
-    cmp dword [rax], 0x00004550 ; "PE\0\0"
-    jne .fail
+  mov eax, [rcx + 0x3C] ; e_lfanew (Offset PE Header)
+  add rax, rcx ; RAX = Adresse PE Header
+  
+  ; Vérification signature "PE"
+  cmp dword [rax], 0x00004550 ; "PE\0\0"
+  jne .fail
 
-    ; Vérification présence Export Directory
-    ; Offset 0x88 = DataDirectory[0].VirtualAddress (Export)
-    mov edx, [rax + 0x88]      
-    test edx, edx
-    jz .fail
+  ; Vérification présence Export Directory
+  ; Offset 0x88 = DataDirectory[0].VirtualAddress (Export)
+  mov edx, [rax + 0x88]      
+  test edx, edx
+  jz .fail
 
-    mov rax, rcx               ; Succès : On retourne la Base comme Context
-    ret
+  mov rax, rcx ; Succès : On retourne la Base comme Context
+  ret
 .fail:
-    xor rax, rax
-    ret
+  xor rax, rax
+  ret
 
 ; =============================================================
 ; resolve_export_by_name
@@ -158,95 +146,95 @@ get_export_ctx:
 ; OUT: RAX = Adresse virtuelle (VA) de la fonction ou 0
 ; =============================================================
 resolve_export_by_name:
-    push rbx
-    push rsi
-    push rdi
-    push r12 
+  push rbx
+  push rsi
+  push rdi
+  push r12 
 
-    mov r8, rcx                ; R8 = DllBase
-    mov r9, rdx                ; R9 = Chaîne cible
+  mov r8, rcx                ; R8 = DllBase
+  mov r9, rdx                ; R9 = Chaîne cible
 
-    ; 1. Accès à l'Export Directory
-    mov eax, [r8 + 0x3C]       ; e_lfanew
-    add rax, r8                ; PE Header
-    mov eax, [rax + 0x88]      ; RVA Export Dir
-    add rax, r8                ; RAX = VA Export Dir
-    mov r10, rax               ; R10 pointe sur IMAGE_EXPORT_DIRECTORY
+  ; 1. Accès à l'Export Directory
+  mov eax, [r8 + 0x3C]       ; e_lfanew
+  add rax, r8                ; PE Header
+  mov eax, [rax + 0x88]      ; RVA Export Dir
+  add rax, r8                ; RAX = VA Export Dir
+  mov r10, rax               ; R10 pointe sur IMAGE_EXPORT_DIRECTORY
 
-    ; 2. Récupération des pointeurs clés
-    mov ecx,  [r10 + 0x18]     ; ECX = NumberOfNames (Compteur boucle)
-    mov r11d, [r10 + 0x20]     ; RVA AddressOfNames
-    add r11, r8                ; R11 = VA AddressOfNames (Tableau de RVA)
+  ; 2. Récupération des pointeurs clés
+  mov ecx,  [r10 + 0x18]     ; ECX = NumberOfNames (Compteur boucle)
+  mov r11d, [r10 + 0x20]     ; RVA AddressOfNames
+  add r11, r8                ; R11 = VA AddressOfNames (Tableau de RVA)
 
-    ; 3. Boucle de recherche
-    ; On itère de (NumberOfNames-1) jusqu'à 0
+  ; 3. Boucle de recherche
+  ; On itère de (NumberOfNames-1) jusqu'à 0
 .loop_find:
-    jecxz .not_found           ; Si compteur = 0 -> Fini
-    dec rcx                    ; Index actuel
+  jecxz .not_found           ; Si compteur = 0 -> Fini
+  dec rcx                    ; Index actuel
 
-    ; Récupérer le nom courant
-    mov edx, [r11 + rcx*4]     ; RDX = RVA du nom (DWORD)
-    add rdx, r8                ; RDX = VA du nom (String ASCII)
+  ; Récupérer le nom courant
+  mov edx, [r11 + rcx*4]     ; RDX = RVA du nom (DWORD)
+  add rdx, r8                ; RDX = VA du nom (String ASCII)
 
-    ; Comparaison (RDX vs R9)
-    call _strcmp_ascii
-    test eax, eax              ; 0 = Match
-    jnz .loop_find             ; Pas match ? Suivant
+  ; Comparaison (RDX vs R9)
+  call _strcmp_ascii
+  test eax, eax              ; 0 = Match
+  jnz .loop_find             ; Pas match ? Suivant
 
-    ; 4. Match trouvé ! Récupérer l'adresse
-    ; A) Trouver l'Ordinal
-    mov r12d, [r10 + 0x24]     ; RVA AddressOfNameOrdinals
-    add r12, r8
-    movzx edx, word [r12 + rcx*2] ; EDX = Ordinal (WORD !)
+  ; 4. Match trouvé ! Récupérer l'adresse
+  ; A) Trouver l'Ordinal
+  mov r12d, [r10 + 0x24]     ; RVA AddressOfNameOrdinals
+  add r12, r8
+  movzx edx, word [r12 + rcx*2] ; EDX = Ordinal (WORD !)
 
-    ; B) Trouver la Fonction
-    mov r12d, [r10 + 0x1c]     ; RVA AddressOfFunctions
-    add r12, r8
-    mov eax, [r12 + rdx*4]     ; RAX = RVA de la fonction
-    add rax, r8                ; RAX = VA de la fonction (Adresse finale)
-    
-    jmp .done
+  ; B) Trouver la Fonction
+  mov r12d, [r10 + 0x1c]     ; RVA AddressOfFunctions
+  add r12, r8
+  mov eax, [r12 + rdx*4]     ; RAX = RVA de la fonction
+  add rax, r8                ; RAX = VA de la fonction (Adresse finale)
+  
+  jmp .done
 
 .not_found:
-    xor rax, rax
+  xor rax, rax
 
 .done:
-    pop r12
-    pop rdi
-    pop rsi
-    pop rbx
-    ret
+  pop r12
+  pop rdi
+  pop rsi
+  pop rbx
+  ret
 
 ; helper: strcmp (r9=target, rdx=current)
 ; Modifie RSI/RDI/AL/BL. Preservé par l'appelant.
 _strcmp_ascii:
-    push rsi
-    push rdi
-    mov rsi, rdx
-    mov rdi, r9
+  push rsi
+  push rdi
+  mov rsi, rdx
+  mov rdi, r9
 .cmp_loop:
-    mov al, byte [rsi]
-    mov bl, byte [rdi]
-    cmp al, bl
-    jne .diff
-    test al, al
-    jz .match
-    inc rsi
-    inc rdi
-    jmp .cmp_loop
+  mov al, byte [rsi]
+  mov bl, byte [rdi]
+  cmp al, bl
+  jne .diff
+  test al, al
+  jz .match
+  inc rsi
+  inc rdi
+  jmp .cmp_loop
 .diff:
-    mov eax, 1
-    jmp .end_cmp
+  mov eax, 1
+  jmp .end_cmp
 .match:
-    xor eax, eax
+  xor eax, eax
 .end_cmp:
-    pop rdi
-    pop rsi
-    ret
+  pop rdi
+  pop rsi
+  ret
 
 ; =============================================================
 ; DATA
 ; =============================================================
-w_kernel32:         dw 'K','E','R','N','E','L','3','2','.','D','L','L', 0
-a_GetProcAddress:   db 'GetProcAddress', 0
+w_kernel32: dw 'K','E','R','N','E','L','3','2','.','D','L','L', 0
+a_GetProcAddress: db 'GetProcAddress', 0
 a_GetModuleHandleA: db 'GetModuleHandleA', 0
