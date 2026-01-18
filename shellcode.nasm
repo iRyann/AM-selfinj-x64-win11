@@ -29,9 +29,7 @@ _start:
   test rax, rax
   jz die
   
-  ; Dans cette version simplifiée, le Context EST la DllBase.
-  ; Cela suffit pour résoudre n'importe quel export.
-  mov r12, rax ; R12 = Export Context (DllBase)
+  mov r12, rax ; R12 = DllBase
 
   ; ---------------------------------------------------------
   ; Résoudre Les fonctions de résolution
@@ -194,47 +192,47 @@ resolve_export_by_name:
   push rdi
   push r12 
 
-  mov r8, rcx                ; R8 = DllBase
-  mov r9, rdx                ; R9 = Chaîne cible
+  mov r8, rcx ; R8 = DllBase
+  mov r9, rdx ; R9 = Chaîne cible
 
   ; 1. Accès à l'Export Directory
-  mov eax, [r8 + 0x3C]       ; e_lfanew
-  add rax, r8                ; PE Header
-  mov eax, [rax + 0x88]      ; RVA Export Dir
-  add rax, r8                ; RAX = VA Export Dir
-  mov r10, rax               ; R10 pointe sur IMAGE_EXPORT_DIRECTORY
+  mov eax, [r8 + 0x3C] ; e_lfanew
+  add rax, r8 ; PE Header
+  mov eax, [rax + 0x88] ; RVA Export Dir
+  add rax, r8 ; RAX = VA Export Dir
+  mov r10, rax ; R10 pointe sur IMAGE_EXPORT_DIRECTORY
 
   ; 2. Récupération des pointeurs clés
-  mov ecx,  [r10 + 0x18]     ; ECX = NumberOfNames (Compteur boucle)
-  mov r11d, [r10 + 0x20]     ; RVA AddressOfNames
-  add r11, r8                ; R11 = VA AddressOfNames (Tableau de RVA)
+  mov ecx,  [r10 + 0x18] ; ECX = NumberOfNames (Compteur boucle)
+  mov r11d, [r10 + 0x20] ; RVA AddressOfNames
+  add r11, r8 ; R11 = VA AddressOfNames (Tableau de RVA)
 
   ; 3. Boucle de recherche
   ; On itère de (NumberOfNames-1) jusqu'à 0
 .loop_find:
-  jecxz .not_found           ; Si compteur = 0 -> Fini
-  dec rcx                    ; Index actuel
+  jecxz .not_found ; Si compteur = 0 -> Fini
+  dec rcx ; Index actuel
 
   ; Récupérer le nom courant
-  mov edx, [r11 + rcx*4]     ; RDX = RVA du nom (DWORD)
-  add rdx, r8                ; RDX = VA du nom (String ASCII)
+  mov edx, [r11 + rcx*4] ; RDX = RVA du nom (DWORD)
+  add rdx, r8 ; RDX = VA du nom (String ASCII)
 
   ; Comparaison (RDX vs R9)
   call _strcmp_ascii
-  test eax, eax              ; 0 = Match
-  jnz .loop_find             ; Pas match ? Suivant
+  test eax, eax ; 0 = Match
+  jnz .loop_find ; Pas match ? Suivant
 
-  ; 4. Match trouvé ! Récupérer l'adresse
+  ; 4. Match trouvé : récupérer l'adresse
   ; A) Trouver l'Ordinal
-  mov r12d, [r10 + 0x24]     ; RVA AddressOfNameOrdinals
+  mov r12d, [r10 + 0x24] ; RVA AddressOfNameOrdinals
   add r12, r8
   movzx edx, word [r12 + rcx*2] ; EDX = Ordinal (WORD !)
 
   ; B) Trouver la Fonction
-  mov r12d, [r10 + 0x1c]     ; RVA AddressOfFunctions
+  mov r12d, [r10 + 0x1c] ; RVA AddressOfFunctions
   add r12, r8
-  mov eax, [r12 + rdx*4]     ; RAX = RVA de la fonction
-  add rax, r8                ; RAX = VA de la fonction (Adresse finale)
+  mov eax, [r12 + rdx*4] ; RAX = RVA de la fonction
+  add rax, r8 ; RAX = VA de la fonction (Adresse finale)
   
   jmp .done
 
