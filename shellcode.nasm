@@ -1,4 +1,4 @@
-[bits 64]
+BITS 64
 
 section .text
 global _start
@@ -34,23 +34,66 @@ _start:
   mov r12, rax ; R12 = Export Context (DllBase)
 
   ; ---------------------------------------------------------
-  ; Résoudre GetProcAddress
+  ; Résoudre Les fonctions de résolution
   ; ---------------------------------------------------------
   
+  ; --- Résolution de GetModuleHandleA ---
+  lea rdx, [rel a_GetModuleHandleA] ; RDX = "GetModuleHandleA"
+  mov rcx, r12 ; RCX = Context (Base)
+  call resolve_export_by_name
+  test rax, rax
+  jz die
+  mov r13, rax ; R13 = pGetModuleHandleA
+
   ; --- Résolution de GetProcAddress ---
   lea rdx, [rel a_GetProcAddress] ; RDX = "GetProcAddress"
   mov rcx, r12 ; RCX = Context (Base)
   call resolve_export_by_name
   test rax, rax
   jz die
-  mov r13, rax ; R13 = pGetProcAddress
-  jmp _suite_du_code
+  mov r14, rax ; R14 = pGetProcAddress
+
+
+  ; appel de MessageBoxA
+
+  ; chargement de user32.dll
+  ;; récupération de LoadLibraryA
+  lea rcx, [rel a_kernel32]
+  call r13 ; GetModuleHandleA (rax <- kernel32.dll handle)
+  mov rcx, rax 
+  lea rdx, [rel a_LoadLibraryA]
+  call r14 ; GetProcAddress (rax <- LoadLibraryA)
+  
+  ;; appel de LoadLibraryA
+  lea rcx, [rel a_USER32MODULENAME]
+  call rax ; LoadLibraryA (rax <- user32.dll handle)
+  mov rcx, rax
+  lea rdx, [rel a_MessageBoxA]
+  call r14 ; GetProcAddress (rax <- MessageBoxA)
+
+  xor rcx, rcx ; hWnd null, la messageBox n'est pas rattachée à une fenêtre
+  lea rdx, [rel a_MessageBoxA] ; texte
+  lea r8, [rel a_user32] ; titre
+  xor r9, r9
+  call rax
+
+  ; appel de ExitThread
+
+  lea rcx, [rel a_kernel32]
+  call r13 ; GetModuleHandleA (rax <- kernel32.dll handle)
+  mov rcx, rax
+  lea rdx, [rel a_ExitThread]
+  call r14 ; GetProcAddress (rax <- ExitThread)
+
+  xor rcx,rcx ; code de retour nul
+  call rax
+
 
 die:
   int 3
-_suite_du_code:
-  ; TODO
-  jmp _suite_du_code
+  xor rax,rax
+  mov [rax],0 ; provoquer un segfault
+
 
 ; get_ldr_head: retourne un pointeur stable vers LIST_ENTRY head (InMemoryOrderModuleList)
 ; OUT: RAX = head (LIST_ENTRY*)
@@ -60,7 +103,7 @@ get_ldr_head:
   ; According to "Data structure alignment" requirement
   ; We've to consider a 4 bytes spacing between
   ; Reserved[2] and Reserved[3]
-  mov rax, [rax+ 0x18] ; Get address of PEB_LDR_DATA
+  mov rax, [rax + 0x18] ; Get address of PEB_LDR_DATA
   add rax, 0x20 ; Get address of InMemoryOrderModuleList
   ret
 
@@ -80,7 +123,7 @@ _scan_loop:
     je _not_found ; Module name not found
     push rdx ; Sauve le noeud courant
     push rcx ; Sauve le pointeur string "KERNEL32..."
-    mov rsi, [rdx + 0x50] ; RSI = Buffer
+    mov rsi, [rdx + 0x50] ; RSI = le pointeur string "nom du module courant..."
     mov rdi, rcx
     test rsi, rsi ; Buffer null ?
     jz _next_candidate
@@ -128,7 +171,7 @@ get_export_ctx:
 
   ; Vérification présence Export Directory
   ; Offset 0x88 = DataDirectory[0].VirtualAddress (Export)
-  mov edx, [rax + 0x88]      
+  mov edx, [rax + 0x88]
   test edx, edx
   jz .fail
 
@@ -238,3 +281,9 @@ _strcmp_ascii:
 w_kernel32: dw 'K','E','R','N','E','L','3','2','.','D','L','L', 0
 a_GetProcAddress: db 'GetProcAddress', 0
 a_GetModuleHandleA: db 'GetModuleHandleA', 0
+a_ExitThread: db 'ExitThread', 0
+a_LoadLibraryA: db 'LoadLibraryA', 0
+a_USER32MODULENAME: db 'USER32', 0
+a_MessageBoxA: db 'MessageBoxA', 0
+a_kernel32: db 'kernel32.dll', 0
+a_user32: db 'user32.dll', 0
